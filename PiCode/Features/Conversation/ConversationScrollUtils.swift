@@ -2,32 +2,58 @@ import QuartzCore
 import SwiftUI
 
 extension ConversationView {
-    func scrollIfPinned(_ proxy: ScrollViewProxy, animated: Bool) {
-        guard !scrollState.isPrepending else { return }
+    func updateTranscriptGeometry(_ geometry: TranscriptGeometry?, proxy: ScrollViewProxy) {
+        let previous = scrollState.geometry
+        scrollState.geometry = geometry
+        guard let geometry, geometry.viewport.height > 0 else { return }
+
         if isOpeningSession {
             showLatest(proxy)
-            return
+        } else if !scrollState.isPrepending {
+            if geometry.isAtBottom {
+                if !isPinnedToBottom { isPinnedToBottom = true }
+            } else if let previous, !geometry.hasSameHeight(as: previous) {
+                // Layout changes can move the bottom before the scroll offset catches up.
+                if isPinnedToBottom { followAfterLayout(proxy) }
+            } else if isPinnedToBottom, !scrollState.followScheduled {
+                isPinnedToBottom = false
+            }
         }
-        guard isPinnedToBottom else { return }
-        if animated {
-            withAnimation(.easeOut(duration: 0.18)) {
-                proxy.scrollTo(bottomAnchor, anchor: .bottom)
-            }
-        } else {
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(bottomAnchor, anchor: .bottom)
-            }
+
+        let topGap = geometry.topGap
+        if topGap != scrollState.topGap { scrollState.lastScrollActivity = CACurrentMediaTime() }
+        if topGap != scrollState.topGap || geometry.viewport.height != previous?.viewport.height {
+            virtualizer.update(topGap: topGap, viewportHeight: geometry.viewport.height)
+        }
+        scrollState.topGap = topGap
+        prefetchEarlierTranscript(topGap: topGap)
+    }
+
+    private func followAfterLayout(_ proxy: ScrollViewProxy) {
+        guard !scrollState.followScheduled else { return }
+        scrollState.followScheduled = true
+        let generation = scrollState.generation
+        DispatchQueue.main.async {
+            guard scrollState.generation == generation else { return }
+            scrollState.followScheduled = false
+            guard isPinnedToBottom, !scrollState.isPrepending,
+                  scrollState.geometry?.isAtBottom == false else { return }
+            scrollToBottom(proxy)
+        }
+    }
+
+    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            proxy.scrollTo(bottomAnchor, anchor: .bottom)
         }
     }
 
     func prefetchEarlierTranscript(topGap: CGFloat) {
-        guard !isOpeningSession, !scrollState.isPrepending, controller.hasEarlierTranscript,
-              scrollState.viewportHeight > 0, let bottom = scrollState.bottomY,
-              bottom > scrollState.viewportHeight + 2,
+        guard !isOpeningSession, !isPinnedToBottom, !scrollState.isPrepending,
+              controller.hasEarlierTranscript, scrollState.viewportHeight > 0,
               topGap < scrollState.viewportHeight * 3 else { return }
-        isPinnedToBottom = false
         scrollState.isPrepending = true
         let generation = scrollState.generation
         scrollState.pageTask = Task { @MainActor in
@@ -99,6 +125,7 @@ extension ConversationView {
         scrollState.topGap = .infinity
         virtualizer.reset()
         scrollState.generation = UUID()
+        scrollState.followScheduled = false
         scrollState.openingTask?.cancel()
         scrollState.openingTask = nil
         isOpeningSession = true
@@ -124,8 +151,7 @@ extension ConversationView {
                       (!controller.items.isEmpty || !waitingForOpen),
                       scrollState.viewportHeight > 0 else { continue }
 
-                if let bottom = scrollState.bottomY,
-                   bottom <= scrollState.viewportHeight + 2 {
+                if scrollState.geometry?.isAtBottom == true {
                     settledSamples += 1
                     if settledSamples >= 2 {
                         isPinnedToBottom = true
@@ -136,11 +162,7 @@ extension ConversationView {
                     }
                 } else {
                     settledSamples = 0
-                    var transaction = Transaction(animation: nil)
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                    }
+                    scrollToBottom(proxy)
                 }
             }
         }

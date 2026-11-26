@@ -6,37 +6,7 @@
 //  messages plus the events PiCode received while they streamed.
 //
 
-import QuartzCore
 import SwiftUI
-
-/// The transcript viewport's height, measured behind the scroll view so the
-/// prefetch below can reason in whole windows.
-private struct TranscriptViewportHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-/// How far the content's top edge sits above the viewport's top while the
-/// user scrolls up. Zero at the very top; it grows as the conversation
-/// scrolls down, so a small value means the top is near.
-private struct TranscriptTopGapKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-/// The transcript content's full height. While a session opens, every change
-/// to it is a row that materialized or a Markdown block that finished sizing
-/// — the bottom the first scroll landed on has moved, so opening follows it.
-private struct TranscriptContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
 
 struct ConversationView: View {
     @Bindable var state: AppState
@@ -141,12 +111,12 @@ struct ConversationView: View {
                             .background(
                                 GeometryReader { geo in
                                     TranscriptScrollViewFinder { scrollAnchor.attach($0) }
-                                    Color.clear.preference(key: TranscriptContentHeightKey.self,
-                                                           value: geo.size.height)
-                                        .preference(key: TranscriptBottomPositionKey.self,
-                                                    value: geo.frame(in: .named(transcriptSpace)).maxY)
-                                        .preference(key: TranscriptTopGapKey.self,
-                                                    value: max(0, -geo.frame(in: .named(transcriptSpace)).minY))
+                                    Color.clear.preference(
+                                        key: TranscriptGeometryKey.self,
+                                        value: geo.bounds(of: .named(transcriptSpace)).map {
+                                            TranscriptGeometry(viewport: $0, contentHeight: geo.size.height)
+                                        }
+                                    )
                                 }
                             )
                         }
@@ -157,34 +127,8 @@ struct ConversationView: View {
             }
             .coordinateSpace(name: transcriptSpace)
             .background(AppTheme.background)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: TranscriptViewportHeightKey.self,
-                                           value: proxy.size.height)
-                }
-            )
-            .onPreferenceChange(TranscriptViewportHeightKey.self) {
-                scrollState.viewportHeight = $0
-                followLatestWhileOpening(proxy)
-            }
-            .onPreferenceChange(TranscriptBottomPositionKey.self) { bottom in
-                scrollState.bottomY = bottom
-                guard let bottom, scrollState.viewportHeight > 0 else { return }
-                if isOpeningSession {
-                    followLatestWhileOpening(proxy)
-                } else if !scrollState.isPrepending {
-                    let pinned = bottom <= scrollState.viewportHeight + 2
-                    if isPinnedToBottom != pinned { isPinnedToBottom = pinned }
-                }
-            }
-            .onPreferenceChange(TranscriptContentHeightKey.self) { _ in
-                followLatestWhileOpening(proxy)
-            }
-            .onPreferenceChange(TranscriptTopGapKey.self) { topGap in
-                if topGap != scrollState.topGap { scrollState.lastScrollActivity = CACurrentMediaTime() }
-                scrollState.topGap = topGap
-                prefetchEarlierTranscript(topGap: topGap)
-                virtualizer.update(topGap: topGap, viewportHeight: scrollState.viewportHeight)
+            .onPreferenceChange(TranscriptGeometryKey.self) { geometry in
+                updateTranscriptGeometry(geometry, proxy: proxy)
             }
             // Assistant text names files the way the agent saw them — usually
             // relative to the project — and change chips name them the way Pi
@@ -233,28 +177,12 @@ struct ConversationView: View {
                 beginOpeningSession(proxy)
             }
             .onChange(of: controller.items.count) { _, _ in
-                if isOpeningSession {
-                    showLatest(proxy)
-                } else if !scrollState.isPrepending {
-                    scrollIfPinned(proxy, animated: false)
-                }
+                followLatestWhileOpening(proxy)
             }
             .onChange(of: controller.isLoadingTranscriptHistory) { _, isLoading in
                 if isOpeningSession, !isLoading, !controller.items.isEmpty {
                     showLatest(proxy)
                 }
-            }
-            .onChange(of: streamingSignature) { _, _ in
-                scrollIfPinned(proxy, animated: false)
-            }
-            .onChange(of: controller.currentTurnStartedAt) { _, newValue in
-                if newValue != nil { scrollIfPinned(proxy, animated: true) }
-            }
-            // The composer grows and shrinks as the prompt does; when it does, the
-            // room at the end of the transcript has to move with it or the last row
-            // drifts back under the box until the next streaming update.
-            .onChange(of: bottomInset) { _, _ in
-                scrollIfPinned(proxy, animated: false)
             }
             // Keep provisional layouts out of sight until the bottom has been
             // measured. Opacity preserves layout and all scroll measurements.
@@ -372,17 +300,6 @@ struct ConversationView: View {
     // The rows are `PiSessionController.rows`: `TranscriptRows`' layout, minus the
     // runs that have nothing to show, computed once per transcript change rather
     // than inside this body.
-
-    // MARK: - Scrolling
-
-    /// Cheap change signal for streaming text so the view follows new output
-    /// without re-reading the whole transcript array. UTF-8 lengths, not
-    /// `count`: a native string knows its UTF-8 length, while `count` walks
-    /// every grapheme — the whole reply, on every flush.
-    private var streamingSignature: Int {
-        guard let last = controller.items.last else { return 0 }
-        return last.id.hashValue &+ last.text.utf8.count &+ (last.toolOutput?.utf8.count ?? 0)
-    }
 
 }
 

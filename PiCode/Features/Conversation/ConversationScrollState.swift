@@ -4,8 +4,8 @@ import SwiftUI
 /// Geometry is bookkeeping, not view state. Updating these values while the
 /// wheel moves must not invalidate the transcript or its environment closures.
 final class ConversationScrollState {
-    var viewportHeight: CGFloat = 0
-    var bottomY: CGFloat?
+    var geometry: TranscriptGeometry?
+    var viewportHeight: CGFloat { geometry?.viewport.height ?? 0 }
     var topGap: CGFloat = .infinity
     var openingTask: Task<Void, Never>?
     var pageTask: Task<Void, Never>?
@@ -17,4 +17,5 @@ final class ConversationScrollState {
     var lastScrollActivity: CFTimeInterval = 0
     var generation = UUID()
     var isPrepending = false
+    var followScheduled = false
 }

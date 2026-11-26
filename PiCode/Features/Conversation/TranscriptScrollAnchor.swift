@@ -29,6 +29,7 @@ import SwiftUI
 final class TranscriptScrollAnchor {
     private weak var scrollView: NSScrollView?
     private var observers: [NSObjectProtocol] = []
+    var onUserScroll: ((Bool) -> Void)?
     /// Document height minus the clip's top, while a hold is active.
     private var distanceFromBottom: CGFloat?
     private var holdUntil: CFTimeInterval = 0
@@ -50,6 +51,15 @@ final class TranscriptScrollAnchor {
         detach()
         self.scrollView = scrollView
         let center = NotificationCenter.default
+        // Inserting the sent prompt, clearing the composer, and rendering a
+        // reply all move the clip. Only a user's scroll should pause following.
+        observers.append(center.addObserver(forName: NSScrollView.didLiveScrollNotification,
+                                            object: scrollView, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let geometry = self.currentGeometry else { return }
+                self.onUserScroll?(geometry.isAtBottom)
+            }
+        })
         scrollView.contentView.postsBoundsChangedNotifications = true
         observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification,
                                             object: scrollView.contentView, queue: nil) { [weak self] _ in

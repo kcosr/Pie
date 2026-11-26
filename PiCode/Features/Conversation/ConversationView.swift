@@ -141,6 +141,9 @@ struct ConversationView: View {
                 state.openInInspector(toolId: id)
             })
             .onAppear {
+                scrollAnchor.onUserScroll = { atBottom in
+                    if isPinnedToBottom != atBottom { isPinnedToBottom = atBottom }
+                }
                 virtualizer.screens = state.preferences.transcriptOffscreenScreens
                 virtualizer.onHeightChangeAboveViewport = { [scrollAnchor] delta in
                     scrollAnchor.compensate(heightChangeAbove: delta)
@@ -161,6 +164,7 @@ struct ConversationView: View {
                 followLatestWhileOpening(proxy)
             }
             .onDisappear {
+                scrollAnchor.onUserScroll = nil
                 scrollState.generation = UUID()
                 scrollState.openingTask?.cancel()
                 scrollState.pageTask?.cancel()
@@ -175,6 +179,10 @@ struct ConversationView: View {
             }
             .onChange(of: controller.items.count) { _, _ in
                 followLatestWhileOpening(proxy)
+            }
+            .onChange(of: controller.submittedPromptCount) { _, _ in
+                isPinnedToBottom = true
+                followAfterLayout(proxy)
             }
             .onChange(of: controller.isLoadingTranscriptHistory) { _, isLoading in
                 if isOpeningSession, !isLoading, !controller.items.isEmpty {

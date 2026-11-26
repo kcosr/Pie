@@ -7,16 +7,6 @@ struct TranscriptGeometry: Equatable {
 
     var topGap: CGFloat { max(0, viewport.minY) }
     var isAtBottom: Bool { contentHeight - viewport.maxY <= 2 }
-
-    func scrolledUp(from previous: Self) -> Bool {
-        // Releasing a rubber-band stretch can also move the viewport up.
-        let previousBottom = max(0, previous.contentHeight - previous.viewport.height)
-        return !isAtBottom && topGap < min(previous.topGap, previousBottom)
-    }
-
-    func hasSameHeight(as other: Self) -> Bool {
-        contentHeight == other.contentHeight && viewport.height == other.viewport.height
-    }
 }
 
 struct TranscriptGeometryKey: PreferenceKey {

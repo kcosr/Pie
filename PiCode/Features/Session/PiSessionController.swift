@@ -93,6 +93,8 @@ final class PiSessionController {
     /// has finished booting. A failed read clears it so the next start retries.
     private var localHistoryFile: String?
     private var optimisticUserItems: [TranscriptItem] = []
+    /// Advances when a local send adds a row to the transcript. Queued prompts stay in the tray.
+    private(set) var submittedPromptCount = 0
     private(set) var items: [TranscriptItem] = []
     /// The transcript's rows, already folded. `TranscriptRows.group` is pure but
     /// O(items), and the view used to call it inside its body — so every streaming
@@ -166,7 +168,6 @@ final class PiSessionController {
     private var toolRuntime: [String: ToolRuntime] = [:]
     private var bashRuntime: [String: BashRuntime] = [:]
     private var liveCompaction = false
-    private var optimisticCounter = 0
 
     // MARK: - Session data
 
@@ -498,9 +499,9 @@ final class PiSessionController {
     }
 
     private func addOptimisticUserItem(text: String) {
-        optimisticCounter += 1
+        submittedPromptCount += 1
         optimisticUserItems.append(TranscriptItem(
-            id: "optimistic-user-\(optimisticCounter)",
+            id: "optimistic-user-\(submittedPromptCount)",
             kind: .user,
             text: text,
             isStreaming: true,

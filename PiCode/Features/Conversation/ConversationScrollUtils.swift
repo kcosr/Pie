@@ -9,19 +9,11 @@ extension ConversationView {
 
         if isOpeningSession {
             showLatest(proxy)
-        } else if !scrollState.isPrepending {
-            if geometry.isAtBottom {
-                if !isPinnedToBottom { isPinnedToBottom = true }
-            } else if isPinnedToBottom {
-                if let previous, geometry.scrolledUp(from: previous) {
-                    isPinnedToBottom = false
-                } else if let previous, !geometry.hasSameHeight(as: previous) {
-                    // Layout changes can move the bottom before the scroll offset catches up.
-                    followAfterLayout(proxy)
-                } else if !scrollState.followScheduled {
-                    isPinnedToBottom = false
-                }
-            }
+        } else if isPinnedToBottom, !geometry.isAtBottom {
+            followAfterLayout(proxy)
+        } else if !isPinnedToBottom, geometry.isAtBottom, !scrollState.isPrepending,
+                  scrollAnchor.currentGeometry?.isAtBottom != false {
+            isPinnedToBottom = true
         }
 
         let topGap = geometry.topGap
@@ -33,20 +25,14 @@ extension ConversationView {
         prefetchEarlierTranscript(topGap: topGap)
     }
 
-    private func followAfterLayout(_ proxy: ScrollViewProxy) {
+    func followAfterLayout(_ proxy: ScrollViewProxy) {
         guard !scrollState.followScheduled else { return }
         scrollState.followScheduled = true
         let generation = scrollState.generation
         DispatchQueue.main.async {
             guard scrollState.generation == generation else { return }
             scrollState.followScheduled = false
-            guard isPinnedToBottom, !scrollState.isPrepending,
-                  let geometry = scrollState.geometry, !geometry.isAtBottom else { return }
-            // AppKit may have scrolled since SwiftUI delivered this preference.
-            if let current = scrollAnchor.currentGeometry, current.scrolledUp(from: geometry) {
-                isPinnedToBottom = false
-                return
-            }
+            guard isPinnedToBottom, scrollState.geometry?.isAtBottom == false else { return }
             scrollToBottom(proxy)
         }
     }

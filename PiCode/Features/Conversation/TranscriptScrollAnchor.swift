@@ -85,16 +85,21 @@ final class TranscriptScrollAnchor {
         geometryBeforeFollow = nil
     }
 
-    func scrollToEnd() -> Bool {
+    func scrollToEnd(preservingScrollAnimation: Bool = false) -> Bool {
         guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return false }
         let clip = scrollView.contentView
         var target = clip.bounds
         target.origin.y = document.bounds.maxY - target.height
         let origin = clip.constrainBoundsRect(target).origin
-        if origin != clip.bounds.origin {
+        if preservingScrollAnimation {
+            guard origin != clip.bounds.origin else { return true }
+            // Adjust for content growth without cancelling a Page Up animation
+            // whose first frame may still be pending.
+            clip.setBoundsOrigin(origin)
+        } else {
             clip.scroll(to: origin)
-            scrollView.reflectScrolledClipView(clip)
         }
+        scrollView.reflectScrolledClipView(clip)
         return true
     }
 

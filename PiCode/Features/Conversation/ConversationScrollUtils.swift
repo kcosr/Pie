@@ -37,13 +37,13 @@ extension ConversationView {
             if movedUp {
                 isPinnedToBottom = false
             } else if scrollState.geometry?.isAtBottom == false {
-                scrollToBottom(proxy)
+                scrollToBottom(proxy, preservingScrollAnimation: true)
             }
         }
     }
 
-    func scrollToBottom(_ proxy: ScrollViewProxy) {
-        if scrollAnchor.scrollToEnd() { return }
+    func scrollToBottom(_ proxy: ScrollViewProxy, preservingScrollAnimation: Bool = false) {
+        if scrollAnchor.scrollToEnd(preservingScrollAnimation: preservingScrollAnimation) { return }
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {

@@ -173,6 +173,7 @@ struct ConversationView: View {
             }
             .onChange(of: controller.submittedPromptCount) { _, _ in
                 isPinnedToBottom = true
+                scrollToBottom(proxy)
                 followAfterLayout(proxy)
             }
             .onChange(of: controller.isLoadingTranscriptHistory) { _, isLoading in

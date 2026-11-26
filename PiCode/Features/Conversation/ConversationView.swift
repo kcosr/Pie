@@ -41,83 +41,74 @@ struct ConversationView: View {
                     // The rows' column, shared with the floating composer
                     // (`ConversationColumn`), so the box lines up with the text.
                     ConversationColumn {
-                        // A transcript shorter than the viewport starts at the top,
-                        // where the landing's first prompt flies to. The filler
-                        // is a sibling so measurements describe the rows alone.
-                        ZStack(alignment: .top) {
-                            Color.clear
-                                .containerRelativeFrame(.vertical)
-                                .allowsHitTesting(false)
-
-                            // Eager, not lazy. A `LazyVStack` guesses the height of rows it
-                            // has not built and corrects the guess as they scroll in, so
-                            // the content height jumped by hundreds of points mid-scroll
-                            // and every newly visible reply was built in the scroll frame.
-                            // Only a window of history is loaded (it grows a turn at a time,
-                            // ahead of the reader — `startIdleHistoryFill`), each row is
-                            // built once, and rows are equatable, so a streaming flush
-                            // re-renders the one row that grew.
-                            TranscriptStackLayout(spacing: 20) {
-                                if controller.isLoadingTranscriptHistory {
-                                    HStack(spacing: 8) {
-                                        ProgressView().controlSize(.small)
-                                        Text("Loading earlier messages…")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .center)
+                        // Eager, not lazy. A `LazyVStack` guesses the height of rows it
+                        // has not built and corrects the guess as they scroll in, so
+                        // the content height jumped by hundreds of points mid-scroll
+                        // and every newly visible reply was built in the scroll frame.
+                        // Only a window of history is loaded (it grows a turn at a time,
+                        // ahead of the reader — `startIdleHistoryFill`), each row is
+                        // built once, and rows are equatable, so a streaming flush
+                        // re-renders the one row that grew.
+                        TranscriptStackLayout(spacing: 20) {
+                            if controller.isLoadingTranscriptHistory {
+                                HStack(spacing: 8) {
+                                    ProgressView().controlSize(.small)
+                                    Text("Loading earlier messages…")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-
-                                // An empty chat draws nothing here: its landing (the
-                                // question over a centred composer) belongs to
-                                // `SessionView`, which owns the composer it moves.
-                                if !controller.items.isEmpty {
-                                    // `controller.rows` is the folded layout, computed
-                                    // once per transcript change. A finished turn's
-                                    // work is one “Worked for” line with Pi's answer left
-                                    // in the open; while a turn streams each task is its
-                                    // own line instead, so the work is visible as it
-                                    // happens. The rows are built from the same array the
-                                    // controller holds, so a line grows in place while a
-                                    // turn is streaming.
-                                    ConversationRowsView(controller: controller, virtualizer: virtualizer)
-                                }
-
-                                if showsThinkingIndicator {
-                                    ThinkingIndicatorRow()
-                                        .transition(.opacity)
-                                }
-
-                                statusFooter
-
-                                // The room for the composer, then the content's true 1pt
-                                // bottom. The room sits *above* the anchor so scrolling
-                                // the anchor to the bottom keeps the room on screen; the
-                                // anchor stays 1pt so `isPinnedToBottom` still means the
-                                // very bottom rather than "within the composer's height".
-                                VStack(spacing: 0) {
-                                    Color.clear
-                                        .frame(height: 8 + bottomInset)
-
-                                    Color.clear
-                                        .frame(height: 1)
-                                }
-                                .id(bottomAnchor)
+                                .frame(maxWidth: .infinity, alignment: .center)
                             }
-                            .scrollTargetLayout()
-                            .padding(.top, 12)
-                            .background(
-                                GeometryReader { geo in
-                                    TranscriptScrollViewFinder { scrollAnchor.attach($0) }
-                                    Color.clear.preference(
-                                        key: TranscriptGeometryKey.self,
-                                        value: geo.bounds(of: .named(transcriptSpace)).map {
-                                            TranscriptGeometry(viewport: $0, contentHeight: geo.size.height)
-                                        }
-                                    )
-                                }
-                            )
+
+                            // An empty chat draws nothing here: its landing (the
+                            // question over a centred composer) belongs to
+                            // `SessionView`, which owns the composer it moves.
+                            if !controller.items.isEmpty {
+                                // `controller.rows` is the folded layout, computed
+                                // once per transcript change. A finished turn's
+                                // work is one “Worked for” line with Pi's answer left
+                                // in the open; while a turn streams each task is its
+                                // own line instead, so the work is visible as it
+                                // happens. The rows are built from the same array the
+                                // controller holds, so a line grows in place while a
+                                // turn is streaming.
+                                ConversationRowsView(controller: controller, virtualizer: virtualizer)
+                            }
+
+                            if showsThinkingIndicator {
+                                ThinkingIndicatorRow()
+                                    .transition(.opacity)
+                            }
+
+                            statusFooter
+
+                            // The room for the composer, then the content's true 1pt
+                            // bottom. The room sits *above* the anchor so scrolling
+                            // the anchor to the bottom keeps the room on screen; the
+                            // anchor stays 1pt so `isPinnedToBottom` still means the
+                            // very bottom rather than "within the composer's height".
+                            VStack(spacing: 0) {
+                                Color.clear
+                                    .frame(height: 8 + bottomInset)
+
+                                Color.clear
+                                    .frame(height: 1)
+                            }
+                            .id(bottomAnchor)
                         }
+                        .scrollTargetLayout()
+                        .padding(.top, 12)
+                        .background(
+                            GeometryReader { geo in
+                                TranscriptScrollViewFinder { scrollAnchor.attach($0) }
+                                Color.clear.preference(
+                                    key: TranscriptGeometryKey.self,
+                                    value: geo.bounds(of: .named(transcriptSpace)).map {
+                                        TranscriptGeometry(viewport: $0, contentHeight: geo.size.height)
+                                    }
+                                )
+                            }
+                        )
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -161,7 +152,7 @@ struct ConversationView: View {
                 beginOpeningSession(proxy)
             }
             .onChange(of: state.sessionOpenCompletedRevision) { _, _ in
-                followLatestWhileOpening(proxy)
+                showLatest(proxy)
             }
             .onDisappear {
                 scrollAnchor.onUserScroll = nil
@@ -178,7 +169,7 @@ struct ConversationView: View {
                 beginOpeningSession(proxy)
             }
             .onChange(of: controller.items.count) { _, _ in
-                followLatestWhileOpening(proxy)
+                showLatest(proxy)
             }
             .onChange(of: controller.submittedPromptCount) { _, _ in
                 isPinnedToBottom = true
@@ -210,9 +201,7 @@ struct ConversationView: View {
                 if !isOpeningSession, !isPinnedToBottom {
                     Button {
                         isPinnedToBottom = true
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                        }
+                        scrollToBottom(proxy)
                     } label: {
                         Label("Jump to latest", huge: "arrow-down-01")
                             .font(.callout)

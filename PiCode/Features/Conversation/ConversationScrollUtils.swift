@@ -9,10 +9,15 @@ extension ConversationView {
 
         if isOpeningSession {
             showLatest(proxy)
+        } else if isPinnedToBottom, !scrollState.isPrepending, !scrollState.followScheduled,
+                  let previous, geometry.movedUpWithoutResizing(from: previous) {
+            // Keyboard navigation, accessibility reveals and selection scrolling
+            // can change only the clip origin, without a live-scroll notification.
+            isPinnedToBottom = false
         } else if isPinnedToBottom, !geometry.isAtBottom {
             followAfterLayout(proxy)
-        } else if !isPinnedToBottom, geometry.isAtBottom, !scrollState.isPrepending,
-                  scrollAnchor.currentGeometry?.isAtBottom != false {
+        } else if !isPinnedToBottom, geometry.isAtScrollEnd, !scrollState.isPrepending,
+                  scrollAnchor.currentGeometry?.isAtScrollEnd != false {
             isPinnedToBottom = true
         }
 
@@ -37,7 +42,7 @@ extension ConversationView {
         }
     }
 
-    private func scrollToBottom(_ proxy: ScrollViewProxy) {
+    func scrollToBottom(_ proxy: ScrollViewProxy) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -161,10 +166,5 @@ extension ConversationView {
                 }
             }
         }
-    }
-
-    func followLatestWhileOpening(_ proxy: ScrollViewProxy) {
-        guard isOpeningSession else { return }
-        showLatest(proxy)
     }
 }

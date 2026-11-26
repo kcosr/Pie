@@ -57,7 +57,7 @@ final class TranscriptScrollAnchor {
                                             object: scrollView, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let geometry = self.currentGeometry else { return }
-                self.onUserScroll?(geometry.isAtBottom)
+                self.onUserScroll?(geometry.isAtScrollEnd)
             }
         })
         scrollView.contentView.postsBoundsChangedNotifications = true

@@ -40,6 +40,11 @@ final class TranscriptScrollAnchor {
     /// page's rows to lay out and their Markdown to finish sizing.
     private static let holdDuration: CFTimeInterval = 0.8
 
+    var currentGeometry: TranscriptGeometry? {
+        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return nil }
+        return TranscriptGeometry(viewport: scrollView.documentVisibleRect, contentHeight: document.bounds.height)
+    }
+
     func attach(_ scrollView: NSScrollView?) {
         guard let scrollView, scrollView !== self.scrollView else { return }
         detach()

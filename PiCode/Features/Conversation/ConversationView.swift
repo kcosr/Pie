@@ -42,10 +42,8 @@ struct ConversationView: View {
                     // (`ConversationColumn`), so the box lines up with the text.
                     ConversationColumn {
                         // A transcript shorter than the viewport starts at the top,
-                        // where the landing's first prompt flies to, instead of
-                        // resting on `defaultScrollAnchor(.bottom)`. The filler is a
-                        // sibling, so the measurements below still describe the
-                        // rows alone.
+                        // where the landing's first prompt flies to. The filler
+                        // is a sibling so measurements describe the rows alone.
                         ZStack(alignment: .top) {
                             Color.clear
                                 .containerRelativeFrame(.vertical)
@@ -123,7 +121,6 @@ struct ConversationView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .defaultScrollAnchor(.bottom)
             }
             .coordinateSpace(name: transcriptSpace)
             .background(AppTheme.background)

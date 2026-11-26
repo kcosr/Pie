@@ -12,11 +12,15 @@ extension ConversationView {
         } else if !scrollState.isPrepending {
             if geometry.isAtBottom {
                 if !isPinnedToBottom { isPinnedToBottom = true }
-            } else if let previous, !geometry.hasSameHeight(as: previous) {
-                // Layout changes can move the bottom before the scroll offset catches up.
-                if isPinnedToBottom { followAfterLayout(proxy) }
-            } else if isPinnedToBottom, !scrollState.followScheduled {
-                isPinnedToBottom = false
+            } else if isPinnedToBottom {
+                if let previous, geometry.scrolledUp(from: previous) {
+                    isPinnedToBottom = false
+                } else if let previous, !geometry.hasSameHeight(as: previous) {
+                    // Layout changes can move the bottom before the scroll offset catches up.
+                    followAfterLayout(proxy)
+                } else if !scrollState.followScheduled {
+                    isPinnedToBottom = false
+                }
             }
         }
 
@@ -37,7 +41,12 @@ extension ConversationView {
             guard scrollState.generation == generation else { return }
             scrollState.followScheduled = false
             guard isPinnedToBottom, !scrollState.isPrepending,
-                  scrollState.geometry?.isAtBottom == false else { return }
+                  let geometry = scrollState.geometry, !geometry.isAtBottom else { return }
+            // AppKit may have scrolled since SwiftUI delivered this preference.
+            if let current = scrollAnchor.currentGeometry, current.scrolledUp(from: geometry) {
+                isPinnedToBottom = false
+                return
+            }
             scrollToBottom(proxy)
         }
     }

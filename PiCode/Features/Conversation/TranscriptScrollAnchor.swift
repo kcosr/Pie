@@ -30,6 +30,11 @@ final class TranscriptScrollAnchor {
     private weak var scrollView: NSScrollView?
     private var observers: [NSObjectProtocol] = []
     var onUserScroll: ((Bool) -> Void)?
+    private var clipTop: CGFloat = 0
+    private var clipMovedUp = false
+    private var pendingFollow: DispatchWorkItem?
+    private var geometryBeforeFollow: TranscriptGeometry?
+    var isFollowScheduled: Bool { pendingFollow != nil }
     /// Document height minus the clip's top, while a hold is active.
     private var distanceFromBottom: CGFloat?
     private var holdUntil: CFTimeInterval = 0
@@ -46,19 +51,65 @@ final class TranscriptScrollAnchor {
         return TranscriptGeometry(viewport: scrollView.documentVisibleRect, contentHeight: document.bounds.height)
     }
 
+    func scheduleFollow(_ action: @escaping (_ movedUp: Bool) -> Void) {
+        guard pendingFollow == nil else { return }
+        geometryBeforeFollow = currentGeometry
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let movedUp: Bool
+            if let before = self.geometryBeforeFollow, let now = self.currentGeometry {
+                movedUp = !now.isAtScrollEnd && now.movedUpWithoutResizing(from: before)
+            } else {
+                movedUp = false
+            }
+            self.pendingFollow = nil
+            self.geometryBeforeFollow = nil
+            action(movedUp)
+        }
+        pendingFollow = work
+        DispatchQueue.main.async(execute: work)
+    }
+
+    fileprivate func didLayout() {
+        guard let work = pendingFollow, let before = geometryBeforeFollow,
+              let now = currentGeometry, !now.hasSameSize(as: before) else { return }
+        // Finish following the resize here. A later Page Up may start an animation
+        // before its first offset arrives, so no queued jump should outlive this layout.
+        work.perform()
+        work.cancel()
+    }
+
+    func cancelPendingFollow() {
+        pendingFollow?.cancel()
+        pendingFollow = nil
+        geometryBeforeFollow = nil
+    }
+
+    func scrollToEnd() -> Bool {
+        guard let scrollView, let document = scrollView.documentView, document.isFlipped else { return false }
+        let clip = scrollView.contentView
+        var target = clip.bounds
+        target.origin.y = document.bounds.maxY - target.height
+        let origin = clip.constrainBoundsRect(target).origin
+        if origin != clip.bounds.origin {
+            clip.scroll(to: origin)
+            scrollView.reflectScrolledClipView(clip)
+        }
+        return true
+    }
+
     func attach(_ scrollView: NSScrollView?) {
         guard let scrollView, scrollView !== self.scrollView else { return }
         detach()
         self.scrollView = scrollView
+        clipTop = scrollView.contentView.bounds.minY
+        clipMovedUp = false
         let center = NotificationCenter.default
         // Inserting the sent prompt, clearing the composer, and rendering a
         // reply all move the clip. Only a user's scroll should pause following.
         observers.append(center.addObserver(forName: NSScrollView.didLiveScrollNotification,
                                             object: scrollView, queue: nil) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let geometry = self.currentGeometry else { return }
-                self.onUserScroll?(geometry.isAtScrollEnd)
-            }
+            MainActor.assumeIsolated { self?.liveScroll() }
         })
         scrollView.contentView.postsBoundsChangedNotifications = true
         observers.append(center.addObserver(forName: NSView.boundsDidChangeNotification,
@@ -78,6 +129,7 @@ final class TranscriptScrollAnchor {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         scrollView = nil
+        cancelPendingFollow()
         distanceFromBottom = nil
     }
 
@@ -110,10 +162,25 @@ final class TranscriptScrollAnchor {
         distanceFromBottom != nil && CACurrentMediaTime() <= holdUntil
     }
 
-    /// The user scrolled during the hold: what they now see is what to keep.
+    private func recordClipOrigin(_ y: CGFloat) {
+        // Bounds and live-scroll notifications can report the same movement.
+        guard y != clipTop else { return }
+        clipMovedUp = !isCorrecting && y < clipTop
+        clipTop = y
+    }
+
+    private func liveScroll() {
+        guard let scrollView, let geometry = currentGeometry else { return }
+        recordClipOrigin(scrollView.contentView.bounds.minY)
+        if geometry.isAtScrollEnd { onUserScroll?(true) }
+        else if clipMovedUp { onUserScroll?(false) }
+        clipMovedUp = false
+    }
+
     private func clipDidScroll() {
-        guard !isCorrecting, isHolding,
-              let scrollView, let document = scrollView.documentView else { return }
+        guard let scrollView else { return }
+        recordClipOrigin(scrollView.contentView.bounds.minY)
+        guard !isCorrecting, isHolding, let document = scrollView.documentView else { return }
         distanceFromBottom = document.frame.height - scrollView.contentView.bounds.origin.y
     }
 
@@ -136,27 +203,33 @@ final class TranscriptScrollAnchor {
 
 /// Hands the transcript's backing `NSScrollView` to the anchor once it exists.
 struct TranscriptScrollViewFinder: NSViewRepresentable {
-    var onFind: (NSScrollView?) -> Void
+    var anchor: TranscriptScrollAnchor
 
     func makeNSView(context: Context) -> FinderView {
         let view = FinderView()
-        view.onFind = onFind
+        view.anchor = anchor
         return view
     }
 
     func updateNSView(_ nsView: FinderView, context: Context) {
-        nsView.onFind = onFind
+        nsView.anchor = anchor
     }
 
     final class FinderView: NSView {
-        var onFind: ((NSScrollView?) -> Void)?
+        weak var anchor: TranscriptScrollAnchor?
+
+        override func layout() {
+            super.layout()
+            anchor?.didLayout()
+        }
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard window != nil else { return }
             // The scroll view finishes assembling after this view joins it.
             DispatchQueue.main.async { [weak self] in
-                self?.onFind?(self?.enclosingScrollView)
+                guard let self else { return }
+                anchor?.attach(enclosingScrollView)
             }
         }
 

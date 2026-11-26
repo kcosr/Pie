@@ -12,9 +12,12 @@ struct TranscriptGeometry: Equatable {
     var isAtBottom: Bool { bottomGap <= 2 }
     var isAtScrollEnd: Bool { bottomGap <= 0 }
 
+    func hasSameSize(as other: Self) -> Bool {
+        contentHeight == other.contentHeight && viewport.size == other.viewport.size
+    }
+
     func movedUpWithoutResizing(from previous: Self) -> Bool {
-        contentHeight == previous.contentHeight && viewport.size == previous.viewport.size
-            && topGap < previous.topGap && !isAtScrollEnd
+        hasSameSize(as: previous) && topGap < previous.topGap
     }
 }
 

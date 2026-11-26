@@ -17,5 +17,4 @@ final class ConversationScrollState {
     var lastScrollActivity: CFTimeInterval = 0
     var generation = UUID()
     var isPrepending = false
-    var followScheduled = false
 }

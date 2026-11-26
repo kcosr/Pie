@@ -100,7 +100,7 @@ struct ConversationView: View {
                         .padding(.top, 12)
                         .background(
                             GeometryReader { geo in
-                                TranscriptScrollViewFinder { scrollAnchor.attach($0) }
+                                TranscriptScrollViewFinder(anchor: scrollAnchor)
                                 Color.clear.preference(
                                     key: TranscriptGeometryKey.self,
                                     value: geo.bounds(of: .named(transcriptSpace)).map {

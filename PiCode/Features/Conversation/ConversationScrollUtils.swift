@@ -7,17 +7,18 @@ extension ConversationView {
         scrollState.geometry = geometry
         guard let geometry, geometry.viewport.height > 0 else { return }
 
+        // SwiftUI can measure a fractional row height past AppKit's last scrollable pixel.
+        let atScrollEnd = (scrollAnchor.currentGeometry ?? geometry).isAtScrollEnd
         if isOpeningSession {
             showLatest(proxy)
-        } else if isPinnedToBottom, !scrollState.isPrepending, !scrollState.followScheduled,
+        } else if isPinnedToBottom, !atScrollEnd, !scrollAnchor.isFollowScheduled,
                   let previous, geometry.movedUpWithoutResizing(from: previous) {
             // Keyboard navigation, accessibility reveals and selection scrolling
             // can change only the clip origin, without a live-scroll notification.
             isPinnedToBottom = false
         } else if isPinnedToBottom, !geometry.isAtBottom {
             followAfterLayout(proxy)
-        } else if !isPinnedToBottom, geometry.isAtScrollEnd, !scrollState.isPrepending,
-                  scrollAnchor.currentGeometry?.isAtScrollEnd != false {
+        } else if !isPinnedToBottom, geometry.isAtBottom, atScrollEnd {
             isPinnedToBottom = true
         }
 
@@ -31,18 +32,18 @@ extension ConversationView {
     }
 
     func followAfterLayout(_ proxy: ScrollViewProxy) {
-        guard !scrollState.followScheduled else { return }
-        scrollState.followScheduled = true
-        let generation = scrollState.generation
-        DispatchQueue.main.async {
-            guard scrollState.generation == generation else { return }
-            scrollState.followScheduled = false
-            guard isPinnedToBottom, scrollState.geometry?.isAtBottom == false else { return }
-            scrollToBottom(proxy)
+        scrollAnchor.scheduleFollow { movedUp in
+            guard isPinnedToBottom else { return }
+            if movedUp {
+                isPinnedToBottom = false
+            } else if scrollState.geometry?.isAtBottom == false {
+                scrollToBottom(proxy)
+            }
         }
     }
 
     func scrollToBottom(_ proxy: ScrollViewProxy) {
+        if scrollAnchor.scrollToEnd() { return }
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
@@ -125,7 +126,7 @@ extension ConversationView {
         scrollState.topGap = .infinity
         virtualizer.reset()
         scrollState.generation = UUID()
-        scrollState.followScheduled = false
+        scrollAnchor.cancelPendingFollow()
         scrollState.openingTask?.cancel()
         scrollState.openingTask = nil
         isOpeningSession = true
